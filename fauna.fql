@@ -1,0 +1,63 @@
+CreateCollection({
+  name: "api-keys",
+  history_days: 30,
+  ttl_days: null
+})
+
+CreateCollection({
+  name: "providers",
+  history_days: 30,
+  ttl_days: null
+})
+
+CreateIndex({
+  name: "search_apikey_by_id",
+  unique: true,
+  serialized: true,
+  source: "api-keys",
+  terms: [
+    {
+      field: ["data", "id"]
+    }
+  ],
+  values: [
+    {
+      field: ["ref"]
+    }
+  ]
+})
+
+CreateIndex({
+  name: "search_apikey_by_key",
+  unique: true,
+  serialized: true,
+  source: "api-keys",
+  terms: [
+    {
+      field: ["data", "key"]
+    }
+  ]
+})
+
+CreateIndex({
+  name: "search_apikey_by_provider",
+  unique: false,
+  serialized: true,
+  source: "api-keys",
+  terms: [
+    {
+      field: ["data", "providerRef"]
+    }
+  ],
+  values: [
+    {
+      field: ["ref"]
+    },
+    {
+      field: ["data", "epoch"]
+    },
+    {
+      field: ["data", "coinbase"]
+    }
+  ]
+})
