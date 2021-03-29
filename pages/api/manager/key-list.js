@@ -1,6 +1,6 @@
 import {query as q} from 'faunadb'
-import {serverClient} from '../../../utils/faunadb'
-import {getEpoch} from '../../../utils/node-api'
+import {serverClient} from '../../../shared/utils/faunadb'
+import {getEpoch} from '../../../shared/utils/node-api'
 
 function parseHeader(req) {
   const auth = req.headers.authorization
@@ -13,7 +13,7 @@ function parseHeader(req) {
 export default async (req, res) => {
   try {
     const token = parseHeader(req)
-    if (token !== process.env.TOKEN) {
+    if (token !== process.env.MANAGER_TOKEN) {
       return res.status(403).send('access denied')
     }
 
@@ -24,7 +24,7 @@ export default async (req, res) => {
         q.Paginate(
           q.Filter(
             q.Match(q.Index('search_apikey_by_epoch')),
-            q.Lambda(['ref', 'epoch'], q.GTE(q.Var('epoch'), epoch))
+            q.Lambda(['ref', 'epoch'], q.GTE(q.Var('epoch'), epoch - 1))
           ),
           {
             size: 100000,
@@ -35,7 +35,8 @@ export default async (req, res) => {
     )
 
     return res.status(200).json(result.data)
-  } catch {
+  } catch (e) {
+    console.log(e)
     return res.status(500).send('internal error')
   }
 }

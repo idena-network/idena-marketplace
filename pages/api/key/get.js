@@ -1,6 +1,6 @@
 import {query as q} from 'faunadb'
-import {serverClient} from '../../../utils/faunadb'
-import {getTx} from '../../../utils/node-api'
+import {serverClient} from '../../../shared/utils/faunadb'
+import {getTx} from '../../../shared/utils/node-api'
 
 const HASH_IN_MEMPOOL = '0x0000000000000000000000000000000000000000000000000000000000000000'
 

@@ -1,6 +1,6 @@
 import {query as q} from 'faunadb'
-import {serverClient} from '../../utils/faunadb'
-import {getEpoch} from '../../utils/node-api'
+import {serverClient} from '../../../shared/utils/faunadb'
+import {getEpoch} from '../../../shared/utils/node-api'
 
 export default async (req, res) => {
   const {epoch} = await getEpoch()
@@ -10,7 +10,7 @@ export default async (req, res) => {
         q.Paginate(q.Documents(q.Collection('providers'))),
         q.Lambda('p', {
           id: q.Select(['id'], q.Var('p')),
-          provider: q.Select(['data'], q.Get(q.Var('p'))),
+          data: q.Select(['data'], q.Get(q.Var('p'))),
           slots: q.Count(
             q.Filter(
               q.Match(q.Index('search_apikey_by_provider'), q.Var('p')),

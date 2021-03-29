@@ -1,6 +1,7 @@
 import {query as q} from 'faunadb'
-import {serverClient} from '../../../utils/faunadb'
-import {getEpoch, sendRawTx} from '../../../utils/node-api'
+import {Transaction} from '../../../shared/models/transaction'
+import {serverClient} from '../../../shared/utils/faunadb'
+import {getEpoch, sendRawTx} from '../../../shared/utils/node-api'
 
 async function bookKey(coinbase, provider, epoch) {
   try {
@@ -32,6 +33,22 @@ async function bookKey(coinbase, provider, epoch) {
   }
 }
 
+const TxType = {
+  Send: 0,
+  Activate: 1,
+}
+
+function checkTx(tx, provider) {
+  const parsedTx = new Transaction().fromHex(tx)
+
+  if (parsedTx.type !== TxType.Activate && parsedTx.type !== TxType.Send) throw new Error('tx is invalid')
+
+  if (parsedTx.type === TxType.Activate && provider !== process.env.IDENA_PROVIDER)
+    throw new Error('provider is invalid')
+
+  if (parsedTx.type === TxType.Send && parsedTx.to !== process.env.MARKETPLACE_ADDRESS) throw new Error('tx is invalid')
+}
+
 export default async (req, res) => {
   if (req.method === 'OPTIONS') {
     return res.status(200).end()
@@ -42,6 +59,7 @@ export default async (req, res) => {
   }
 
   try {
+    checkTx(tx, provider)
     const {epoch} = await getEpoch()
     const booked = await bookKey(coinbase, provider, epoch)
     if (!booked) return res.status(400).send('no keys left')

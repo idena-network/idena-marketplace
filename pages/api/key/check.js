@@ -1,5 +1,5 @@
 import {query as q} from 'faunadb'
-import {serverClient} from '../../../utils/faunadb'
+import {serverClient} from '../../../shared/utils/faunadb'
 
 export default async (req, res) => {
   const {key} = req.query
@@ -15,15 +15,19 @@ export default async (req, res) => {
         q.If(
           q.Exists(q.Var('ref')),
           {
-            result: q.Get(q.Var('ref')),
+            result: {
+              provider: q.Select(['data', 'providerRef', 'id'], q.Get(q.Var('ref'))),
+              key: q.Select(['data', 'key'], q.Get(q.Var('ref'))),
+              epoch: q.Select(['data', 'epoch'], q.Get(q.Var('ref'))),
+            },
           },
           {
-            result: {data: null},
+            result: null,
           }
         )
       )
     )
-    return res.json(query.result.data)
+    return res.json(query.result)
   } catch (e) {
     return res.status(400).send('failed to retrieve api key')
   }

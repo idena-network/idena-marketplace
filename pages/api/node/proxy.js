@@ -5,7 +5,6 @@ const proxy = createProxyMiddleware({
   secure: false,
   target: process.env.PROXY_URL,
   onProxyReq(proxyReq, req) {
-    console.log('changing', process.env.PROXY_KEY)
     const data = JSON.stringify({...req.body, key: process.env.PROXY_KEY})
     proxyReq.setHeader('Content-Length', Buffer.byteLength(data))
     proxyReq.write(data)
@@ -15,7 +14,14 @@ const proxy = createProxyMiddleware({
   },
 })
 
-const AVAILABLE_METHODS = ['dna_identity', 'dna_epoch', 'bcn_getRawTx', 'bcn_sendRawTx', 'bcn_transaction']
+const AVAILABLE_METHODS = [
+  'dna_identity',
+  'dna_epoch',
+  'bcn_getRawTx',
+  'bcn_sendRawTx',
+  'bcn_transaction',
+  'dna_getBalance',
+]
 
 export default async (req, res) => {
   if (req.method === 'OPTIONS') {
