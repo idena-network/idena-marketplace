@@ -41,7 +41,7 @@ const TxType = {
 function checkTx(tx, provider) {
   const parsedTx = new Transaction().fromHex(tx)
 
-  if (parsedTx.type !== TxType.Activate && parsedTx.type !== TxType.Send) throw new Error('tx is invalid')
+  if (parsedTx.type !== TxType.Activate && parsedTx.type !== TxType.Send) throw new Error('tx has invalid type')
 
   if (parsedTx.type === TxType.Activate && provider !== process.env.IDENA_PROVIDER)
     throw new Error('provider is invalid')
@@ -87,7 +87,6 @@ export default async (req, res) => {
 
     return res.status(200).json({id: booked.data.id})
   } catch (e) {
-    console.log(e)
-    return res.status(400).send('failed to buy api key')
+    return res.status(400).send(`failed to buy api key: ${e.message}`)
   }
 }
