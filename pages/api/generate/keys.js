@@ -12,7 +12,7 @@ export default async (req, res) => {
           data: {
             key: `key-${uuidv4()}-${i}-${epoch}`,
             epoch,
-            providerRef: q.Ref(q.Collection('providers'), '290764832667337223'),
+            providerRef: q.Ref(q.Collection('providers'), req.query.provider),
             id: `${uuidv4()}-id-${i}-${epoch}`,
           },
         })
