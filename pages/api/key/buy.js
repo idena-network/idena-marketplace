@@ -1,7 +1,7 @@
 import {query as q} from 'faunadb'
 import {Transaction} from '../../../shared/models/transaction'
 import {serverClient} from '../../../shared/utils/faunadb'
-import {getEpoch, sendRawTx} from '../../../shared/utils/node-api'
+import {checkApiKey, getEpoch, sendRawTx} from '../../../shared/utils/node-api'
 
 async function bookKey(coinbase, provider, epoch) {
   try {
@@ -49,6 +49,17 @@ function checkTx(tx, provider) {
   if (parsedTx.type === TxType.Send && parsedTx.to !== process.env.MARKETPLACE_ADDRESS) throw new Error('tx is invalid')
 }
 
+async function checkKey(key, provider) {
+  try {
+    const result = await serverClient.query(q.Get(q.Ref(q.Collection('providers'), provider)))
+    const {url} = result.data
+    await checkApiKey(url, key)
+    return true
+  } catch (e) {
+    return false
+  }
+}
+
 export default async (req, res) => {
   if (req.method === 'OPTIONS') {
     return res.status(200).end()
@@ -63,6 +74,17 @@ export default async (req, res) => {
     const {epoch} = await getEpoch()
     const booked = await bookKey(coinbase, provider, epoch)
     if (!booked) return res.status(400).send('no keys left')
+
+    if (!(await checkKey(booked.data.key, provider))) {
+      await serverClient.query(
+        q.Update(booked.ref, {
+          data: {
+            coinbase: null,
+          },
+        })
+      )
+      return res.status(400).send('This node is unavailable now. Please try later or select another shared node.')
+    }
 
     try {
       const txHash = await sendRawTx(tx)

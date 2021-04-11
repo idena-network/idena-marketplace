@@ -43,3 +43,19 @@ export async function getEpoch() {
   if (error) throw new Error(error.message)
   return result
 }
+
+export async function checkApiKey(url, key) {
+  const {data} = await axios
+    .create({
+      baseURL: url,
+    })
+    .post('/', {
+      method: 'dna_epoch',
+      params: [],
+      id: 1,
+      key,
+    })
+  const {result, error} = data
+  if (error) throw new Error(error.message)
+  return result
+}

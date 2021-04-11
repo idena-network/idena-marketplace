@@ -32,7 +32,6 @@ export default async (req, res) => {
     }
 
     if (!keyObj.data.mined) {
-      console.log(keyObj.data.hash)
       const tx = await getTx(keyObj.data.hash)
 
       if (tx && tx.blockHash !== HASH_IN_MEMPOOL) {
@@ -54,7 +53,6 @@ export default async (req, res) => {
 
     return res.status(400).send('tx is not mined')
   } catch (e) {
-    console.log(e)
     return res.status(400).send('failed to retrieve api key')
   }
 }
