@@ -1,7 +1,7 @@
 const {createProxyMiddleware} = require('http-proxy-middleware')
 
 const proxy = createProxyMiddleware({
-  changeOrigin: false,
+  changeOrigin: true,
   secure: false,
   target: process.env.PROXY_URL,
   onProxyReq(proxyReq, req) {
