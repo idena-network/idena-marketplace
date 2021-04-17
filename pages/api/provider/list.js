@@ -23,7 +23,7 @@ export default async (req, res) => {
         })
       )
     )
-    return res.json(query.data)
+    return res.json(query.data.filter(x => x.id !== process.env.IDENA_PROVIDER))
   } catch (e) {
     return res.status(400).send('request failed')
   }
