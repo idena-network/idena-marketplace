@@ -27,6 +27,8 @@ export default async (req, res) => {
         )
       )
     )
+    if (query.result && query.result.epoch < parseInt(process.env.MIN_AVAILABLE_EPOCH))
+      return res.status(400).send('API key is expired. Try to buy another one.')
     return res.json(query.result)
   } catch (e) {
     return res.status(400).send('failed to retrieve api key')
