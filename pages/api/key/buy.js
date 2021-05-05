@@ -43,7 +43,7 @@ function checkTx(tx, provider) {
 
   if (parsedTx.type !== TxType.Activate && parsedTx.type !== TxType.Send) throw new Error('tx has invalid type')
 
-  if (parsedTx.type === TxType.Activate && provider !== process.env.IDENA_PROVIDER)
+  if (parsedTx.type === TxType.Activate && !JSON.parse(process.env.IDENA_INVITE_PROVIDERS || '[]').includes(provider))
     throw new Error('provider is invalid')
 
   if (parsedTx.type === TxType.Send && parsedTx.to !== process.env.MARKETPLACE_ADDRESS) throw new Error('tx is invalid')
