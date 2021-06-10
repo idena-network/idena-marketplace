@@ -1,12 +1,13 @@
+/* eslint-disable no-loop-func */
 import {query as q} from 'faunadb'
 import {Transaction} from '../../../shared/models/transaction'
 import {TxType} from '../../../shared/types'
 import {serverClient} from '../../../shared/utils/faunadb'
 import {checkApiKey, getEpoch, sendRawTx} from '../../../shared/utils/node-api'
 
-const providers = JSON.parse(process.env.IDENA_INVITE_PROVIDERS || '[]')
+const IDENA_INVITE_PROVIDERS = JSON.parse(process.env.IDENA_INVITE_PROVIDERS || '[]')
 
-async function bookFreeKey(coinbase, epoch) {
+async function bookFreeKey(providers, coinbase, epoch) {
   try {
     const data = await serverClient.query(
       q.Update(
@@ -74,20 +75,27 @@ export default async (req, res) => {
 
     const {epoch} = await getEpoch()
 
-    const booked = await bookFreeKey(coinbase, epoch)
-    if (!booked) return res.status(400).send('no keys left')
-    const provider = booked.data.providerRef.id
+    let availableProviders = IDENA_INVITE_PROVIDERS
+    let booked = null
+    do {
+      booked = await bookFreeKey(availableProviders, coinbase, epoch)
+      if (!booked) throw new Error('no keys left')
+      const provider = booked.data.providerRef.id
 
-    if (!(await checkKey(booked.data.key, provider))) {
-      await serverClient.query(
-        q.Update(booked.ref, {
-          data: {
-            coinbase: null,
-          },
-        })
-      )
-      return res.status(400).send('This node is unavailable now. Please try later or select another shared node.')
-    }
+      if (!(await checkKey(booked.data.key, provider))) {
+        await serverClient.query(
+          q.Update(booked.ref, {
+            data: {
+              coinbase: null,
+            },
+          })
+        )
+
+        // remove bad provider
+        availableProviders = availableProviders.filter(x => x !== provider)
+        booked = null
+      }
+    } while (!booked)
 
     try {
       const txHash = await sendRawTx(tx)
@@ -110,7 +118,7 @@ export default async (req, res) => {
       return res.status(400).send(`failed to send tx: ${e.message}`)
     }
 
-    return res.status(200).json({id: booked.data.id, provider})
+    return res.status(200).json({id: booked.data.id, provider: booked.data.providerRef.id})
   } catch (e) {
     return res.status(400).send(`failed to buy api key: ${e.message}`)
   }
