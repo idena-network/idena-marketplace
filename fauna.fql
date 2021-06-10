@@ -61,3 +61,62 @@ CreateIndex({
     }
   ]
 })
+
+CreateIndex({
+  name: "search_apikey_by_provider_epoch_free_null_coinbase",
+  unique: false,
+  serialized: true,
+  source: [{
+    collection: Collection("api-keys"),
+    fields: {
+      null_coinbase: Query(
+        Lambda(
+          "k",
+          Equals(Select(["data", "coinbase"], Var("k"), null), null)
+        )
+      )
+    }
+  }],
+  terms: [
+    {
+      field: ["data", "providerRef"]
+    },
+    {
+      field: ["data", "epoch"]
+    },
+    {
+      field: ["data", "free"]
+    },
+    {
+      binding: "null_coinbase"
+    }
+  ],
+  values: [
+    {
+      field: ["ref"]
+    }
+  ]
+})
+
+CreateIndex({
+  name: "get_apikeys_for_proxy",
+  unique: false,
+  serialized: true,
+  source: "api-keys",
+  terms: [
+    {
+      field: ["data", "providerRef"]
+    },
+    {
+      field: ["data", "epoch"]
+    }
+  ],
+  values: [
+    {
+      field: ["ref"]
+    },
+    {
+      field: ["data", "key"]
+    }
+  ]
+})
