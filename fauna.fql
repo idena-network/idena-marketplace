@@ -63,12 +63,18 @@ CreateIndex({
 })
 
 CreateIndex({
-  name: "search_apikey_by_provider_epoch_free_null_coinbase",
+  name: "search_apikey_by_provider_epoch_is_free_null_coinbase",
   unique: false,
   serialized: true,
   source: [{
     collection: Collection("api-keys"),
     fields: {
+      is_free: Query(
+        Lambda(
+          "k",
+          Equals(Select(["data", "free"], Var("k"), false), true)
+        )
+      ),
       null_coinbase: Query(
         Lambda(
           "k",
@@ -85,7 +91,7 @@ CreateIndex({
       field: ["data", "epoch"]
     },
     {
-      field: ["data", "free"]
+      binding: "is_free"
     },
     {
       binding: "null_coinbase"
@@ -120,3 +126,175 @@ CreateIndex({
     }
   ]
 })
+
+CreateIndex({
+  name: "counters_by_epoch_and_provider",
+  unique: true,
+  serialized: true,
+  source: "counters",
+  terms: [
+    {
+      field: ["data", "epoch"]
+    },
+    {
+      field: ["data", "providerRef"]
+    }
+  ],
+  values: [
+    {
+      field: ["ref"]
+    }
+  ]
+})
+
+CreateIndex({
+  name: "free_providers_by_epoch",
+  unique: false,
+  serialized: true,
+  source: [{
+    collection: Collection("counters"),
+    fields: {
+      has_free_slots: Query(
+        Lambda(
+          "k",
+          GT(Select(["data", "countFree"], Var("k"), 0), 0)
+        )
+      )
+    }
+  }],
+  terms: [
+    {
+      field: ["data", "epoch"]
+    },
+    {
+      binding: "has_free_slots"
+    }
+  ],
+  values: [
+    {
+      field: ["data", "providerRef"]
+    },
+    {
+      field: ["data", "countFree"]
+    },
+    {
+      field: ["data", "countPaid"]
+    }
+  ]
+})
+
+CreateIndex({
+  name: "paid_providers_by_epoch",
+  unique: false,
+  serialized: true,
+  source: [{
+    collection: Collection("counters"),
+    fields: {
+      has_paid_slots: Query(
+        Lambda(
+          "k",
+          GT(Select(["data", "countPaid"], Var("k"), 0), 0)
+        )
+      ),
+    }
+  }],
+  terms: [
+    {
+      field: ["data", "epoch"]
+    },
+    {
+      binding: "has_paid_slots"
+    }
+  ],
+  values: [
+    {
+      field: ["data", "providerRef"]
+    },
+    {
+      field: ["data", "countFree"]
+    },
+    {
+      field: ["data", "countPaid"]
+    }
+  ]
+})
+
+CreateFunction({
+  name: "changePaidCounter",
+  role: null,
+  body: Query(
+    Lambda(
+      ["epoch", "providerRef", "changeValue"],
+      Let(
+        {
+         counter: Match(
+            Index("counters_by_epoch_and_provider"),
+            Var("epoch"),
+            Var("providerRef")
+          )
+        },
+       If(
+          Exists(Var("counter")),
+          Let(
+            {
+              counterRef: Select('ref', Get(Var('counter'))),
+              currentCount: Select(["data", "countPaid"], Get(Var("counterRef")))
+            },
+            Update(Var("counterRef"), {
+              data: {
+                countPaid: Add(Var("currentCount"), q.Var("changeValue"))
+              }
+            })
+          ),
+          Create(Collection('counters'), { data: {
+            epoch: Var('epoch'),
+            providerRef: Var('providerRef'),
+            countPaid: Var("changeValue"),
+            countFree: 0
+          }})
+        )
+      )
+    )
+  )
+})
+
+CreateFunction({
+  name: "changeFreeCounter",
+  role: null,
+  body: Query(
+    Lambda(
+      ["epoch", "providerRef", "changeValue"],
+      Let(
+        {
+         counter: Match(
+            Index("counters_by_epoch_and_provider"),
+            Var("epoch"),
+            Var("providerRef")
+          )
+        },
+       If(
+          Exists(Var("counter")),
+          Let(
+            {
+              counterRef: Select('ref', Get(Var('counter'))),
+              currentCount: Select(["data", "countFree"], Get(Var("counterRef")))
+            },
+            Update(Var("counterRef"), {
+              data: {
+                countFree: Add(Var("currentCount"), Var("changeValue"))
+              }
+            })
+          ),
+          Create(Collection('counters'), { data: {
+            epoch: Var('epoch'),
+            providerRef: Var('providerRef'),
+            countPaid: 0,
+            countFree: Var("changeValue")
+          }})
+        )
+      )
+    )
+  )
+})
+
+

@@ -8,22 +8,27 @@ async function bookKey(coinbase, provider, epoch) {
     const data = await serverClient.query(
       q.Let(
         {
-          ref: q.Ref(q.Collection('providers'), provider),
+          provider: q.Ref(q.Collection('providers'), provider),
         },
-        q.Update(
-          q.Select(
-            ['ref'],
-            q.Get(
-              q.Filter(
-                q.Match(q.Index('search_apikey_by_provider'), q.Var('ref')),
-                q.Lambda(
-                  ['ref', 'epoch', 'coinbase'],
-                  q.And(q.Equals(q.Var('epoch'), epoch), q.IsNull(q.Var('coinbase')))
+        q.Do(
+          q.Call(q.Function('changePaidCounter'), epoch, q.Var('provider'), -1),
+          q.Update(
+            q.Select(
+              'ref',
+              q.Get(
+                q.Match(
+                  q.Index('search_apikey_by_provider_epoch_is_free_null_coinbase'),
+                  q.Var('provider'),
+                  epoch,
+                  false, // free: false
+                  true // coinbase: null
                 )
               )
-            )
-          ),
-          {data: {coinbase}}
+            ),
+            {
+              data: {coinbase},
+            }
+          )
         )
       )
     )
@@ -38,15 +43,12 @@ const TxType = {
   Activate: 1,
 }
 
-function checkTx(tx, provider) {
+function checkTx(tx) {
   const parsedTx = new Transaction().fromHex(tx)
 
-  if (parsedTx.type !== TxType.Activate && parsedTx.type !== TxType.Send) throw new Error('tx has invalid type')
+  if (parsedTx.type !== TxType.Send) throw new Error('tx has invalid type')
 
-  if (parsedTx.type === TxType.Activate && !JSON.parse(process.env.IDENA_INVITE_PROVIDERS || '[]').includes(provider))
-    throw new Error('provider is invalid')
-
-  if (parsedTx.type === TxType.Send && parsedTx.to !== process.env.MARKETPLACE_ADDRESS) throw new Error('tx is invalid')
+  if (parsedTx.to !== process.env.MARKETPLACE_ADDRESS) throw new Error('tx is invalid')
 }
 
 async function checkKey(key, provider) {
@@ -70,18 +72,21 @@ export default async (req, res) => {
   }
 
   try {
-    checkTx(tx, provider)
+    checkTx(tx)
     const {epoch} = await getEpoch()
     const booked = await bookKey(coinbase, provider, epoch)
     if (!booked) return res.status(400).send('no keys left')
 
     if (!(await checkKey(booked.data.key, provider))) {
       await serverClient.query(
-        q.Update(booked.ref, {
-          data: {
-            coinbase: null,
-          },
-        })
+        q.Do(
+          q.Update(booked.ref, {
+            data: {
+              coinbase: null,
+            },
+          }),
+          q.Call(q.Function('changePaidCounter'), epoch, booked.data.providerRef, 1)
+        )
       )
       return res.status(400).send('This node is unavailable now. Please try later or select another shared node.')
     }
@@ -98,11 +103,14 @@ export default async (req, res) => {
     } catch (e) {
       // transaction send failed, rollback
       await serverClient.query(
-        q.Update(booked.ref, {
-          data: {
-            coinbase: null,
-          },
-        })
+        q.Do(
+          q.Update(booked.ref, {
+            data: {
+              coinbase: null,
+            },
+          }),
+          q.Call(q.Function('changePaidCounter'), epoch, booked.data.providerRef, 1)
+        )
       )
       return res.status(400).send(`failed to send tx: ${e.message}`)
     }
