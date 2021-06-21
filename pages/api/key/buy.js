@@ -48,7 +48,8 @@ function checkTx(tx) {
 
   if (parsedTx.type !== TxType.Send) throw new Error('tx has invalid type')
 
-  if (parsedTx.to !== process.env.MARKETPLACE_ADDRESS) throw new Error('tx is invalid')
+  // TODO: add provider address check
+  // if (parsedTx.to !== process.env.MARKETPLACE_ADDRESS) throw new Error('tx is invalid')
 }
 
 async function checkKey(key, provider) {
