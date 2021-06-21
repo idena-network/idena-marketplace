@@ -17,14 +17,11 @@ export default async (req, res) => {
         {
           id: q.Select(['id'], q.Var('ref')),
           data: q.Select(['data'], q.Get(q.Var('ref'))),
-          slots: q.Count(
-            q.Filter(
-              q.Match(q.Index('search_apikey_by_provider'), q.Var('ref')),
-              q.Lambda(
-                ['ref', 'epoch', 'coinbase'],
-                q.And(q.Equals(q.Var('epoch'), parseInt(epoch)), q.IsNull(q.Var('coinbase')))
-              )
-            )
+          slots: q.Let(
+            {
+              counter: q.Match(q.Index('counters_by_epoch_and_provider'), epoch, q.Var('ref')),
+            },
+            q.If(q.Exists(q.Var('counter')), q.Select(['data', 'countPaid'], q.Get(q.Var('counter'))), 0)
           ),
         }
       )

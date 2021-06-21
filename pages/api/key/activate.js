@@ -4,37 +4,35 @@ import {Transaction} from '../../../shared/models/transaction'
 import {TxType} from '../../../shared/types'
 import {serverClient} from '../../../shared/utils/faunadb'
 import {checkApiKey, getEpoch, sendRawTx} from '../../../shared/utils/node-api'
+import {shuffle} from '../../../shared/utils/utils'
 
-const IDENA_INVITE_PROVIDERS = JSON.parse(process.env.IDENA_INVITE_PROVIDERS || '[]')
-
-async function bookFreeKey(providers, coinbase, epoch) {
+async function bookFreeKey(provider, coinbase, epoch) {
   try {
     const data = await serverClient.query(
-      q.Update(
-        q.Select(
-          'ref',
-          q.Get(
-            q.Union(
-              providers.map(p =>
-                q.Let(
-                  {
-                    ref: q.Ref(q.Collection('providers'), p),
-                  },
-                  q.Match(
-                    q.Index('search_apikey_by_provider_epoch_free_null_coinbase'),
-                    q.Var('ref'),
-                    parseInt(epoch),
-                    true, // free: true
-                    true // coinbase: null
-                  )
+      q.Let(
+        {
+          provider: q.Ref(q.Collection('providers'), provider),
+        },
+        q.Do(
+          q.Call(q.Function('changeFreeCounter'), epoch, q.Var('provider'), -1),
+          q.Update(
+            q.Select(
+              'ref',
+              q.Get(
+                q.Match(
+                  q.Index('search_apikey_by_provider_epoch_is_free_null_coinbase'),
+                  q.Var('provider'),
+                  epoch,
+                  true, // free: true
+                  true // coinbase: null
                 )
               )
-            )
+            ),
+            {
+              data: {coinbase},
+            }
           )
-        ),
-        {
-          data: {coinbase},
-        }
+        )
       )
     )
 
@@ -61,6 +59,16 @@ async function checkKey(key, provider) {
   }
 }
 
+async function getFreeProviders(epoch) {
+  const {data} = await serverClient.query(
+    q.Map(
+      q.Paginate(q.Match(q.Index('free_providers_by_epoch'), epoch, true)),
+      q.Lambda(['ref', 'countFree', 'countPaid'], q.Select(['id'], q.Var('ref')))
+    )
+  )
+  return data
+}
+
 export default async (req, res) => {
   if (req.method === 'OPTIONS') {
     return res.status(200).end()
@@ -75,27 +83,33 @@ export default async (req, res) => {
 
     const {epoch} = await getEpoch()
 
-    let availableProviders = IDENA_INVITE_PROVIDERS
+    const availableProviders = await getFreeProviders(epoch)
+    shuffle(availableProviders)
+
     let booked = null
-    do {
-      booked = await bookFreeKey(availableProviders, coinbase, epoch)
-      if (!booked) throw new Error('no keys left')
-      const provider = booked.data.providerRef.id
+    for (let i = 0; i < availableProviders.length && !booked; i += 1) {
+      booked = await bookFreeKey(availableProviders[i], coinbase, epoch)
+      if (booked) {
+        if (!(await checkKey(booked.data.key, booked.data.providerRef.id))) {
+          await serverClient.query(
+            q.Do(
+              q.Update(booked.ref, {
+                data: {
+                  coinbase: null,
+                },
+              }),
+              q.Call(q.Function('changeFreeCounter'), epoch, booked.data.providerRef, 1)
+            )
+          )
 
-      if (!(await checkKey(booked.data.key, provider))) {
-        await serverClient.query(
-          q.Update(booked.ref, {
-            data: {
-              coinbase: null,
-            },
-          })
-        )
-
-        // remove bad provider
-        availableProviders = availableProviders.filter(x => x !== provider)
-        booked = null
+          booked = null
+        }
       }
-    } while (!booked)
+    }
+
+    if (!booked) {
+      throw new Error('no keys left')
+    }
 
     try {
       const txHash = await sendRawTx(tx)
@@ -109,11 +123,14 @@ export default async (req, res) => {
     } catch (e) {
       // transaction send failed, rollback
       await serverClient.query(
-        q.Update(booked.ref, {
-          data: {
-            coinbase: null,
-          },
-        })
+        q.Do(
+          q.Update(booked.ref, {
+            data: {
+              coinbase: null,
+            },
+          }),
+          q.Call(q.Function('changeFreeCounter'), epoch, booked.data.providerRef, 1)
+        )
       )
       return res.status(400).send(`failed to send tx: ${e.message}`)
     }

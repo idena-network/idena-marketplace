@@ -4,6 +4,7 @@ import {getEpoch} from '../../../shared/utils/node-api'
 
 export default async (req, res) => {
   const {epoch} = await getEpoch()
+
   try {
     const query = await serverClient.query(
       q.Map(
@@ -11,19 +12,16 @@ export default async (req, res) => {
         q.Lambda('p', {
           id: q.Select(['id'], q.Var('p')),
           data: q.Select(['data'], q.Get(q.Var('p'))),
-          slots: q.Count(
-            q.Filter(
-              q.Match(q.Index('search_apikey_by_provider'), q.Var('p')),
-              q.Lambda(
-                ['ref', 'epoch', 'coinbase'],
-                q.And(q.Equals(q.Var('epoch'), parseInt(epoch)), q.IsNull(q.Var('coinbase')))
-              )
-            )
+          slots: q.Let(
+            {
+              counter: q.Match(q.Index('counters_by_epoch_and_provider'), epoch, q.Var('p')),
+            },
+            q.If(q.Exists(q.Var('counter')), q.Select(['data', 'countPaid'], q.Get(q.Var('counter'))), 0)
           ),
         })
       )
     )
-    return res.json(query.data.filter(x => !JSON.parse(process.env.IDENA_INVITE_PROVIDERS || '[]').includes(x.id)))
+    return res.json(query.data.filter(x => x.slots))
   } catch (e) {
     return res.status(400).send('request failed')
   }
