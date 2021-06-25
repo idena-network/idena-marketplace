@@ -81,9 +81,21 @@ export default async (req, res) => {
   try {
     checkTx(tx)
 
+    const clientProviders = req.body.providers
+
+    if (clientProviders && clientProviders.length === 0) {
+      throw new Error('there are no shared nodes available')
+    }
+
     const {epoch} = await getEpoch()
 
-    const availableProviders = await getFreeProviders(epoch)
+    let availableProviders = await getFreeProviders(epoch)
+
+    // filter providers which are available from client side
+    if (clientProviders) {
+      availableProviders = availableProviders.filter(x => clientProviders.includes(x))
+    }
+
     shuffle(availableProviders)
 
     let booked = null
