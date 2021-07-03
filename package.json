@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "axios": "^0.21.1",
+    "ethereumjs-util": "^7.0.10",
     "faunadb": "^4.0.3",
     "google-protobuf": "^3.15.6",
     "http-proxy-middleware": "^1.0.6",

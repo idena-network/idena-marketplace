@@ -44,6 +44,17 @@ export async function getEpoch() {
   return result
 }
 
+export async function getIdentity(addr) {
+  const {data} = await api().post('/', {
+    method: 'dna_identity',
+    params: [addr],
+    id: 1,
+  })
+  const {result, error} = data
+  if (error) throw new Error(error.message)
+  return result
+}
+
 export async function checkApiKey(url, key) {
   const {data} = await axios
     .create({
