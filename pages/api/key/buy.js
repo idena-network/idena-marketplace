@@ -1,7 +1,8 @@
 import {query as q} from 'faunadb'
+import {checkKey} from '../../../shared/check'
 import {Transaction} from '../../../shared/models/transaction'
 import {serverClient} from '../../../shared/utils/faunadb'
-import {checkApiKey, getEpoch, sendRawTx} from '../../../shared/utils/node-api'
+import {getEpoch, sendRawTx} from '../../../shared/utils/node-api'
 
 async function bookKey(coinbase, provider, epoch) {
   try {
@@ -50,17 +51,6 @@ function checkTx(tx) {
 
   // TODO: add provider address check
   // if (parsedTx.to !== process.env.MARKETPLACE_ADDRESS) throw new Error('tx is invalid')
-}
-
-async function checkKey(key, provider) {
-  try {
-    const result = await serverClient.query(q.Get(q.Ref(q.Collection('providers'), provider)))
-    const {url} = result.data
-    await checkApiKey(url, key)
-    return true
-  } catch (e) {
-    return false
-  }
 }
 
 export default async (req, res) => {
