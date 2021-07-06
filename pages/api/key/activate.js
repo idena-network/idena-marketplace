@@ -1,12 +1,13 @@
 /* eslint-disable no-loop-func */
 import {query as q} from 'faunadb'
+import {checkInvitationLimit, checkKey} from '../../../shared/check'
 import {Transaction} from '../../../shared/models/transaction'
 import {TxType} from '../../../shared/types'
 import {serverClient} from '../../../shared/utils/faunadb'
-import {checkApiKey, getEpoch, sendRawTx} from '../../../shared/utils/node-api'
+import {getEpoch, getIdentity, sendRawTx} from '../../../shared/utils/node-api'
 import {shuffle} from '../../../shared/utils/utils'
 
-async function bookFreeKey(provider, coinbase, epoch) {
+async function bookFreeKey(provider, coinbase, epoch, inviter) {
   try {
     const data = await serverClient.query(
       q.Let(
@@ -15,6 +16,7 @@ async function bookFreeKey(provider, coinbase, epoch) {
         },
         q.Do(
           q.Call(q.Function('changeFreeCounter'), epoch, q.Var('provider'), -1),
+          q.Call(q.Function('changeInviterCounter'), epoch, inviter, 1),
           q.Update(
             q.Select(
               'ref',
@@ -46,17 +48,8 @@ function checkTx(tx) {
   const parsedTx = new Transaction().fromHex(tx)
 
   if (parsedTx.type !== TxType.Activate) throw new Error('tx has invalid type')
-}
 
-async function checkKey(key, provider) {
-  try {
-    const result = await serverClient.query(q.Get(q.Ref(q.Collection('providers'), provider)))
-    const {url} = result.data
-    await checkApiKey(url, key)
-    return true
-  } catch (e) {
-    return false
-  }
+  return parsedTx
 }
 
 async function getFreeProviders(epoch) {
@@ -69,6 +62,11 @@ async function getFreeProviders(epoch) {
   return data
 }
 
+async function getInviter(from) {
+  const invitation = await getIdentity(from)
+  return invitation?.inviter?.address
+}
+
 export default async (req, res) => {
   if (req.method === 'OPTIONS') {
     return res.status(200).end()
@@ -79,7 +77,7 @@ export default async (req, res) => {
   }
 
   try {
-    checkTx(tx)
+    const parsedTx = checkTx(tx)
 
     const clientProviders = req.body.providers
 
@@ -88,6 +86,9 @@ export default async (req, res) => {
     }
 
     const {epoch} = await getEpoch()
+    const inviter = await getInviter(parsedTx.from)
+
+    await checkInvitationLimit(inviter, epoch)
 
     let availableProviders = await getFreeProviders(epoch)
 
@@ -100,7 +101,7 @@ export default async (req, res) => {
 
     let booked = null
     for (let i = 0; i < availableProviders.length && !booked; i += 1) {
-      booked = await bookFreeKey(availableProviders[i], coinbase, epoch)
+      booked = await bookFreeKey(availableProviders[i], coinbase, epoch, inviter)
       if (booked) {
         if (!(await checkKey(booked.data.key, booked.data.providerRef.id))) {
           await serverClient.query(
@@ -110,7 +111,8 @@ export default async (req, res) => {
                   coinbase: null,
                 },
               }),
-              q.Call(q.Function('changeFreeCounter'), epoch, booked.data.providerRef, 1)
+              q.Call(q.Function('changeFreeCounter'), epoch, booked.data.providerRef, 1),
+              q.Call(q.Function('changeInviterCounter'), epoch, inviter, -1)
             )
           )
 
@@ -141,7 +143,8 @@ export default async (req, res) => {
               coinbase: null,
             },
           }),
-          q.Call(q.Function('changeFreeCounter'), epoch, booked.data.providerRef, 1)
+          q.Call(q.Function('changeFreeCounter'), epoch, booked.data.providerRef, 1),
+          q.Call(q.Function('changeInviterCounter'), epoch, inviter, -1)
         )
       )
       return res.status(400).send(`failed to send tx: ${e.message}`)

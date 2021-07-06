@@ -1,12 +1,13 @@
 /* eslint-disable no-loop-func */
 import {query as q} from 'faunadb'
+import {checkInvitationLimit, checkKey} from '../../../shared/check'
 import {hexToUint8Array} from '../../../shared/utils/buffers'
 import {serverClient} from '../../../shared/utils/faunadb'
-import {checkApiKey, getEpoch, getIdentity} from '../../../shared/utils/node-api'
+import {getEpoch, getIdentity} from '../../../shared/utils/node-api'
 import {getAddrFromSignature} from '../../../shared/utils/signature'
 import {shuffle} from '../../../shared/utils/utils'
 
-async function bookFreeKeyForCandidate(provider, coinbase, epoch) {
+async function bookFreeKeyForCandidate(provider, coinbase, epoch, inviter) {
   try {
     const data = await serverClient.query(
       q.Let(
@@ -15,6 +16,7 @@ async function bookFreeKeyForCandidate(provider, coinbase, epoch) {
         },
         q.Do(
           q.Call(q.Function('changeFreeCounter'), epoch, q.Var('provider'), -1),
+          q.Call(q.Function('changeInviterCounter'), epoch, inviter, 1),
           q.Update(
             q.Select(
               'ref',
@@ -39,17 +41,6 @@ async function bookFreeKeyForCandidate(provider, coinbase, epoch) {
     return data
   } catch (e) {
     return null
-  }
-}
-
-async function checkKey(key, provider) {
-  try {
-    const result = await serverClient.query(q.Get(q.Ref(q.Collection('providers'), provider)))
-    const {url} = result.data
-    await checkApiKey(url, key)
-    return true
-  } catch (e) {
-    return false
   }
 }
 
@@ -95,11 +86,13 @@ export default async (req, res) => {
     }
 
     const {epoch} = await getEpoch()
-    const {state} = await getIdentity(coinbase)
+    const {state, inviter} = await getIdentity(coinbase)
 
     if (state !== 'Candidate') {
       return res.status(400).send('identity is not a candidate')
     }
+
+    await checkInvitationLimit(inviter?.address, epoch)
 
     const usedKey = await searchForUsedKey(epoch, coinbase)
 
@@ -118,7 +111,7 @@ export default async (req, res) => {
 
     let booked = null
     for (let i = 0; i < availableProviders.length && !booked; i += 1) {
-      booked = await bookFreeKeyForCandidate(availableProviders[i], coinbase, epoch)
+      booked = await bookFreeKeyForCandidate(availableProviders[i], coinbase, epoch, inviter?.address)
       if (booked) {
         if (!(await checkKey(booked.data.key, booked.data.providerRef.id))) {
           await serverClient.query(
@@ -129,7 +122,8 @@ export default async (req, res) => {
                   mined: null,
                 },
               }),
-              q.Call(q.Function('changeFreeCounter'), epoch, booked.data.providerRef, 1)
+              q.Call(q.Function('changeFreeCounter'), epoch, booked.data.providerRef, 1),
+              q.Call(q.Function('changeInviterCounter'), epoch, inviter, -1)
             )
           )
 
