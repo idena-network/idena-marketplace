@@ -10,6 +10,18 @@ CreateCollection({
   ttl_days: null
 })
 
+CreateCollection({
+  name: "counters",
+  history_days: 30,
+  ttl_days: null
+})
+
+CreateCollection({
+  name: "invitation-counters",
+  history_days: 30,
+  ttl_days: null
+})
+
 CreateIndex({
   name: "search_apikey_by_id",
   unique: true,
@@ -227,6 +239,26 @@ CreateIndex({
   terms: [
     {
       field: ["data", "coinbase"]
+    },
+    {
+      field: ["data", "epoch"]
+    }
+  ],
+  values: [
+    {
+      field: ["ref"]
+    }
+  ]
+})
+
+CreateIndex({
+  name: "invitation_counters_by_inviter_epoch",
+  unique: true,
+  serialized: true,
+  source: "invitation-counters",
+  terms: [
+    {
+      field: ["data", "inviter"]
     },
     {
       field: ["data", "epoch"]
