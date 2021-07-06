@@ -10,3 +10,7 @@ export function shuffle(array) {
 
   return array
 }
+
+export function godNode() {
+  return (process.env.IDENA_GOD_NODE || '').toLowerCase()
+}

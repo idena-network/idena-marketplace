@@ -4,9 +4,9 @@ import {hexToUint8Array} from '../../../shared/utils/buffers'
 import {serverClient} from '../../../shared/utils/faunadb'
 import {checkApiKey, getEpoch, getIdentity} from '../../../shared/utils/node-api'
 import {getAddrFromSignature} from '../../../shared/utils/signature'
-import {shuffle} from '../../../shared/utils/utils'
+import {godNode, shuffle} from '../../../shared/utils/utils'
 
-async function bookFreeKeyForCandidate(provider, coinbase, epoch) {
+async function bookFreeKeyForCandidate(provider, coinbase, epoch, inviter) {
   try {
     const data = await serverClient.query(
       q.Let(
@@ -15,6 +15,7 @@ async function bookFreeKeyForCandidate(provider, coinbase, epoch) {
         },
         q.Do(
           q.Call(q.Function('changeFreeCounter'), epoch, q.Var('provider'), -1),
+          q.Call(q.Function('changeInviterCounter'), epoch, inviter, 1),
           q.Update(
             q.Select(
               'ref',
@@ -72,6 +73,29 @@ async function searchForUsedKey(epoch, coinbase) {
   }
 }
 
+async function checkInvitationLimit(inviter, epoch) {
+  if (!inviter) {
+    throw new Error('invalid tx')
+  }
+
+  if (inviter.toLowerCase() === godNode()) {
+    return true
+  }
+
+  const {data} = await serverClient.query(
+    q.Let(
+      {
+        counter: q.Match(q.Index('invitation_counters_by_inviter_epoch'), inviter, epoch),
+      },
+      q.If(q.IsEmpty(q.Var('counter')), {data: {count: 0}}, q.Get(q.Var('counter')))
+    )
+  )
+
+  if (data.count > 4) throw new Error('inviter has exceeded the limit')
+
+  return true
+}
+
 export default async (req, res) => {
   if (req.method === 'OPTIONS') {
     return res.status(200).end()
@@ -95,11 +119,13 @@ export default async (req, res) => {
     }
 
     const {epoch} = await getEpoch()
-    const {state} = await getIdentity(coinbase)
+    const {state, inviter} = await getIdentity(coinbase)
 
     if (state !== 'Candidate') {
       return res.status(400).send('identity is not a candidate')
     }
+
+    await checkInvitationLimit(inviter?.address, epoch)
 
     const usedKey = await searchForUsedKey(epoch, coinbase)
 
@@ -118,7 +144,7 @@ export default async (req, res) => {
 
     let booked = null
     for (let i = 0; i < availableProviders.length && !booked; i += 1) {
-      booked = await bookFreeKeyForCandidate(availableProviders[i], coinbase, epoch)
+      booked = await bookFreeKeyForCandidate(availableProviders[i], coinbase, epoch, inviter?.address)
       if (booked) {
         if (!(await checkKey(booked.data.key, booked.data.providerRef.id))) {
           await serverClient.query(
@@ -129,7 +155,8 @@ export default async (req, res) => {
                   mined: null,
                 },
               }),
-              q.Call(q.Function('changeFreeCounter'), epoch, booked.data.providerRef, 1)
+              q.Call(q.Function('changeFreeCounter'), epoch, booked.data.providerRef, 1),
+              q.Call(q.Function('changeInviterCounter'), epoch, inviter, -1)
             )
           )
 

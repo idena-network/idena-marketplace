@@ -219,6 +219,26 @@ CreateIndex({
   ]
 })
 
+CreateIndex({
+  name: "search_apikey_by_coinbase_epoch",
+  unique: false,
+  serialized: true,
+  source: "api-keys",
+  terms: [
+    {
+      field: ["data", "coinbase"]
+    },
+    {
+      field: ["data", "epoch"]
+    }
+  ],
+  values: [
+    {
+      field: ["ref"]
+    }
+  ]
+})
+
 CreateFunction({
   name: "changePaidCounter",
   role: null,
@@ -297,4 +317,41 @@ CreateFunction({
   )
 })
 
+CreateFunction({
+  name: "changeInviterCounter",
+  role: null,
+  body: Query(
+    Lambda(
+      ["epoch", "inviter", "changeValue"],
+      Let(
+        {
+         counter: Match(
+            Index("invitation_counters_by_inviter_epoch"),
+            Var("inviter"),
+            Var("epoch")
+          )
+        },
+       If(
+          Exists(Var("counter")),
+          Let(
+            {
+              counterRef: Select('ref', Get(Var('counter'))),
+              currentCount: Select(["data", "count"], Get(Var("counterRef")))
+            },
+            Update(Var("counterRef"), {
+              data: {
+                count: Add(Var("currentCount"), Var("changeValue"))
+              }
+            })
+          ),
+          Create(Collection('invitation-counters'), { data: {
+            epoch: Var('epoch'),
+            inviter: Var('inviter'),
+            count: Var("changeValue")
+          }})
+        )
+      )
+    )
+  )
+})
 

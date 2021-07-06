@@ -2,6 +2,7 @@ import sha3 from 'js-sha3'
 import secp256k1 from 'secp256k1'
 import messages from './proto/models_pb'
 import {toBuffer, hexToUint8Array, toHexString, bufferToInt} from '../utils/buffers'
+import {getAddrFromSignature} from '../utils/signature'
 
 export class Transaction {
   constructor(nonce, epoch, type, to, amount, maxFee, tips, payload) {
@@ -62,6 +63,10 @@ export class Transaction {
 
   toHex() {
     return this.toBytes().toString('hex')
+  }
+
+  get from() {
+    return getAddrFromSignature(this._createProtoTxData().serializeBinary(), this.signature)
   }
 
   _createProtoTxData() {
