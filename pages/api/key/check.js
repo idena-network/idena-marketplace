@@ -10,12 +10,6 @@ export default async (req, res) => {
     return res.status(400).send('bad request')
   }
 
-  const {epoch, nextValidation} = await getEpoch()
-
-  const expirationDt = new Date(nextValidation)
-
-  expirationDt.setMinutes(expirationDt.getMinutes() - KEY_EXPIRATION_TIMEOUT_MIN)
-
   try {
     const query = await serverClient.query(
       q.Let(
@@ -31,18 +25,13 @@ export default async (req, res) => {
               epoch: q.Select(['data', 'epoch'], q.Get(q.Var('ref'))),
             },
           },
-          {
-            result: null,
-          }
+          q.Abort('key not found')
         )
       )
     )
-
-    if (query.result && query.result.epoch < epoch && new Date() > expirationDt) {
-      return res.status(400).send('API key is expired. Try to buy another one.')
-    }
     return res.json(query.result)
   } catch (e) {
+    console.log(e)
     return res.status(400).send('failed to retrieve api key')
   }
 }
