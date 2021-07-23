@@ -1,8 +1,5 @@
 import {query as q} from 'faunadb'
 import {serverClient} from '../../../shared/utils/faunadb'
-import {getEpoch} from '../../../shared/utils/node-api'
-
-const KEY_EXPIRATION_TIMEOUT_MIN = parseInt(process.env.KEY_EXPIRATION_TIMEOUT_MIN || 7 * 24 * 60)
 
 export default async (req, res) => {
   const {key} = req.query
