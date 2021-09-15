@@ -5,7 +5,7 @@ import {checkApiKey} from './utils/node-api'
 
 export async function checkInvitationLimit(inviter, epoch) {
   if (!inviter) {
-    throw new Error('invalid tx')
+    throw new Error('the invitation code is missing')
   }
 
   if (inviter.toLowerCase() === godNode()) {
