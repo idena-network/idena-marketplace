@@ -147,11 +147,11 @@ export default async (req, res) => {
           q.Call(q.Function('changeInviterCounter'), epoch, inviter, -1)
         )
       )
-      return res.status(400).send(`failed to send tx: ${e.message}`)
+      return res.status(400).send(e.message)
     }
 
     return res.status(200).json({id: booked.data.id, provider: booked.data.providerRef.id})
   } catch (e) {
-    return res.status(400).send(`failed to buy api key: ${e.message}`)
+    return res.status(400).send(e.message)
   }
 }
