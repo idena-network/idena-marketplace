@@ -10,6 +10,25 @@ function parseHeader(req) {
   return spl[1]
 }
 
+const ONE_DAY = 1000 * 60 * 60 * 24
+
+function getMatches(epoch, nextValidation) {
+  const nextValidationDt = new Date(nextValidation)
+  const current = new Date()
+
+  if (nextValidationDt - current > ONE_DAY * 7) {
+    return [
+      q.Match(q.Index('get_apikeys_for_proxy'), q.Var('provider'), epoch - 1),
+      q.Match(q.Index('get_apikeys_for_proxy'), q.Var('provider'), epoch),
+      q.Match(q.Index('get_apikeys_for_proxy'), q.Var('provider'), epoch + 1),
+    ]
+  }
+  return [
+    q.Match(q.Index('get_apikeys_for_proxy'), q.Var('provider'), epoch),
+    q.Match(q.Index('get_apikeys_for_proxy'), q.Var('provider'), epoch + 1),
+  ]
+}
+
 export default async (req, res) => {
   try {
     const {provider} = req.query
@@ -18,7 +37,7 @@ export default async (req, res) => {
       return res.status(403).send('access denied')
     }
 
-    const {epoch} = await getEpoch()
+    const {epoch, nextValidation} = await getEpoch()
 
     const result = await serverClient.query(
       q.Let(
@@ -26,16 +45,9 @@ export default async (req, res) => {
           provider: q.Ref(q.Collection('providers'), provider),
         },
         q.Map(
-          q.Paginate(
-            q.Union(
-              q.Match(q.Index('get_apikeys_for_proxy'), q.Var('provider'), epoch - 1),
-              q.Match(q.Index('get_apikeys_for_proxy'), q.Var('provider'), epoch),
-              q.Match(q.Index('get_apikeys_for_proxy'), q.Var('provider'), epoch + 1)
-            ),
-            {
-              size: 100000,
-            }
-          ),
+          q.Paginate(q.Union(getMatches(epoch, nextValidation)), {
+            size: 100000,
+          }),
           q.Lambda(['ref', 'key'], q.Var('key'))
         )
       )

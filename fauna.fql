@@ -31,11 +31,6 @@ CreateIndex({
     {
       field: ["data", "id"]
     }
-  ],
-  values: [
-    {
-      field: ["ref"]
-    }
   ]
 })
 
