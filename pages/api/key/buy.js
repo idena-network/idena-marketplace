@@ -82,12 +82,13 @@ export default async (req, res) => {
       return res.status(400).send('This node is unavailable now. Please try later or select another shared node.')
     }
 
+    let hash = null
     try {
-      const txHash = await sendRawTx(tx)
+      hash = await sendRawTx(tx)
       await serverClient.query(
         q.Update(booked.ref, {
           data: {
-            hash: txHash,
+            hash,
           },
         })
       )
@@ -106,7 +107,7 @@ export default async (req, res) => {
       return res.status(400).send(e.message)
     }
 
-    return res.status(200).json({id: booked.data.id})
+    return res.status(200).json({id: booked.data.id, txHash: hash})
   } catch (e) {
     return res.status(400).send(e.message)
   }
