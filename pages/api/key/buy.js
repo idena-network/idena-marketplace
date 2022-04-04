@@ -53,6 +53,11 @@ function checkTx(tx) {
   // if (parsedTx.to !== process.env.MARKETPLACE_ADDRESS) throw new Error('tx is invalid')
 }
 
+async function checkForPurchasedKeys(epoch, coinbase) {
+  const count = await serverClient.query(q.Count(q.Match(q.Index('search_apikey_by_coinbase_epoch'), coinbase, epoch)))
+  if (count > 4) throw new Error('Your address has exceeded the limit (4 API keys per address)')
+}
+
 export default async (req, res) => {
   if (req.method === 'OPTIONS') {
     return res.status(200).end()
@@ -65,6 +70,9 @@ export default async (req, res) => {
   try {
     checkTx(tx)
     const {epoch} = await getEpoch()
+
+    await checkForPurchasedKeys(epoch, coinbase)
+
     const booked = await bookKey(coinbase, provider, epoch)
     if (!booked) return res.status(400).send('no keys left')
 
