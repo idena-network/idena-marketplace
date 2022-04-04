@@ -54,14 +54,8 @@ function checkTx(tx) {
 }
 
 async function checkForPurchasedKeys(epoch, coinbase) {
-  try {
-    const count = await serverClient.query(
-      q.Count(q.Match(q.Index('search_apikey_by_coinbase_epoch'), coinbase, epoch))
-    )
-    return count
-  } catch {
-    throw new Error('Your address has exceeded the limit (4 API keys per address)')
-  }
+  const count = await serverClient.query(q.Count(q.Match(q.Index('search_apikey_by_coinbase_epoch'), coinbase, epoch)))
+  if (count > 4) throw new Error('Your address has exceeded the limit (4 API keys per address)')
 }
 
 export default async (req, res) => {
