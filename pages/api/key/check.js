@@ -1,5 +1,4 @@
-import {query as q} from 'faunadb'
-import {serverClient} from '../../../shared/utils/faunadb'
+import {createPool} from '../../../shared/utils/pg'
 
 export default async (req, res) => {
   const {key} = req.query
@@ -7,26 +6,18 @@ export default async (req, res) => {
     return res.status(400).send('bad request')
   }
 
+  const pool = createPool()
+
   try {
-    const query = await serverClient.query(
-      q.Let(
-        {
-          ref: q.Match(q.Index('search_apikey_by_key'), key),
-        },
-        q.If(
-          q.Exists(q.Var('ref')),
-          {
-            result: {
-              provider: q.Select(['data', 'providerRef', 'id'], q.Get(q.Var('ref'))),
-              key: q.Select(['data', 'key'], q.Get(q.Var('ref'))),
-              epoch: q.Select(['data', 'epoch'], q.Get(q.Var('ref'))),
-            },
-          },
-          q.Abort('key not found')
-        )
-      )
-    )
-    return res.json(query.result)
+    const result = await pool.query('select * from keys where key = $1', [key])
+
+    const row = result.rows[0]
+
+    return res.json({
+      provider: row.provider_id,
+      key,
+      epoch: row.epoch,
+    })
   } catch (e) {
     return res.status(400).send('failed to retrieve api key')
   }

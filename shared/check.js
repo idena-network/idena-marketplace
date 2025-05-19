@@ -1,9 +1,10 @@
-import {query as q} from 'faunadb'
-import {godNode} from './utils/utils'
-import {serverClient} from './utils/faunadb'
 import {checkApiKey} from './utils/node-api'
+import {createPool} from './utils/pg'
+import {godNode} from './utils/utils'
 
 export async function checkInvitationLimit(inviter, epoch) {
+  const pool = createPool()
+
   if (!inviter) {
     throw new Error('the invitation code is missing')
   }
@@ -12,25 +13,30 @@ export async function checkInvitationLimit(inviter, epoch) {
     return true
   }
 
-  const {data} = await serverClient.query(
-    q.Let(
-      {
-        counter: q.Match(q.Index('invitation_counters_by_inviter_epoch'), inviter, epoch),
-      },
-      q.If(q.IsEmpty(q.Var('counter')), {data: {count: 0}}, q.Get(q.Var('counter')))
-    )
+  const invitationsQuery = await pool.query(
+    `
+select count(*)
+from keys
+where epoch = $1 and inviter = $2`,
+    [epoch, inviter]
   )
 
-  if (data.count > 4) throw new Error('inviter has exceeded the limit')
+  if (invitationsQuery.rowCount > 4) {
+    throw new Error('inviter has exceeded the limit')
+  }
 
   return true
 }
 
-export async function checkKey(key, provider) {
+export async function checkKey(key, providerId) {
   try {
-    const result = await serverClient.query(q.Get(q.Ref(q.Collection('providers'), provider)))
-    const {url} = result.data
-    await checkApiKey(url, key)
+    const pool = createPool()
+
+    const providerQuery = await pool.query('select * from providers where id = $1', [providerId])
+
+    const provider = providerQuery.rows[0]
+
+    await checkApiKey(provider.url, key)
     return true
   } catch (e) {
     return false

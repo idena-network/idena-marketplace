@@ -1,67 +1,10 @@
 /* eslint-disable no-loop-func */
-import {query as q} from 'faunadb'
 import {checkInvitationLimit, checkKey} from '../../../shared/check'
 import {hexToUint8Array} from '../../../shared/utils/buffers'
-import {serverClient} from '../../../shared/utils/faunadb'
 import {getEpoch, getIdentity} from '../../../shared/utils/node-api'
+import {createPool} from '../../../shared/utils/pg'
 import {getAddrFromSignature} from '../../../shared/utils/signature'
 import {shuffle} from '../../../shared/utils/utils'
-
-async function bookFreeKeyForCandidate(provider, coinbase, epoch, inviter) {
-  try {
-    const data = await serverClient.query(
-      q.Let(
-        {
-          provider: q.Ref(q.Collection('providers'), provider),
-        },
-        q.Do(
-          q.Call(q.Function('changeFreeCounter'), epoch, q.Var('provider'), -1),
-          q.Call(q.Function('changeInviterCounter'), epoch, inviter, 1),
-          q.Update(
-            q.Select(
-              'ref',
-              q.Get(
-                q.Match(
-                  q.Index('search_apikey_by_provider_epoch_is_free_null_coinbase'),
-                  q.Var('provider'),
-                  epoch,
-                  true, // free: true
-                  true // coinbase: null
-                )
-              )
-            ),
-            {
-              data: {coinbase, mined: true},
-            }
-          )
-        )
-      )
-    )
-
-    return data
-  } catch (e) {
-    return null
-  }
-}
-
-async function getFreeProviders(epoch) {
-  const {data} = await serverClient.query(
-    q.Map(
-      q.Paginate(q.Match(q.Index('free_providers_by_epoch'), epoch, true)),
-      q.Lambda(['ref', 'countFree', 'countPaid'], q.Select(['id'], q.Var('ref')))
-    )
-  )
-  return data
-}
-
-async function searchForUsedKey(epoch, coinbase) {
-  try {
-    const {data} = await serverClient.query(q.Get(q.Match(q.Index('search_apikey_by_coinbase_epoch'), coinbase, epoch)))
-    return data
-  } catch {
-    return null
-  }
-}
 
 export default async (req, res) => {
   if (req.method === 'OPTIONS') {
@@ -79,6 +22,8 @@ export default async (req, res) => {
   }
 
   try {
+    const pool = createPool()
+
     const clientProviders = req.body.providers
 
     if (clientProviders && clientProviders.length === 0) {
@@ -94,13 +39,24 @@ export default async (req, res) => {
 
     await checkInvitationLimit(inviter?.address, epoch)
 
-    const usedKey = await searchForUsedKey(epoch, coinbase)
+    const usedKeyQuery = await pool.query('select * from keys where epoch = $1 and coinbase = $2', [epoch, coinbase])
 
-    if (usedKey) {
-      return res.status(200).json({id: usedKey.id, provider: usedKey.providerRef.id})
+    if (usedKeyQuery.rowCount) {
+      const usedKey = usedKeyQuery.rows[0]
+      return res.status(200).json({id: usedKey.id, provider: usedKey.provider_id})
     }
 
-    let availableProviders = await getFreeProviders(epoch)
+    const availableProvidersQuery = await pool.query(
+      `
+select provider_id
+from keys
+where epoch = $1 
+group by provider_id
+having sum(case when free then 1 else 0 end) > 0`,
+      [epoch]
+    )
+
+    let availableProviders = availableProvidersQuery.rows.map(x => x.provider_id)
 
     // filter providers which are available from client side
     if (clientProviders) {
@@ -111,21 +67,24 @@ export default async (req, res) => {
 
     let booked = null
     for (let i = 0; i < availableProviders.length && !booked; i += 1) {
-      booked = await bookFreeKeyForCandidate(availableProviders[i], coinbase, epoch, inviter?.address)
-      if (booked) {
-        if (!(await checkKey(booked.data.key, booked.data.providerRef.id))) {
-          await serverClient.query(
-            q.Do(
-              q.Update(booked.ref, {
-                data: {
-                  coinbase: null,
-                  mined: null,
-                },
-              }),
-              q.Call(q.Function('changeFreeCounter'), epoch, booked.data.providerRef, 1),
-              q.Call(q.Function('changeInviterCounter'), epoch, inviter, -1)
-            )
-          )
+      const bookQuery = await pool.query(
+        `
+update keys
+set coinbase = $3,
+    inviter = $4,
+    mined = true,
+    updated_at = now()
+where provider_id = $1 and epoch = $2 and coinbase is null and free = true
+returning id, key, provider_id
+`,
+        [availableProviders[i], epoch, coinbase, inviter?.address]
+      )
+
+      if (bookQuery.rowCount) {
+        // eslint-disable-next-line prefer-destructuring
+        booked = bookQuery.rows[0]
+        if (!(await checkKey(booked.key, booked.provider_id))) {
+          await pool.query('update keys set coinbase = null, mined = false where id = $1', [booked.id])
 
           booked = null
         }
@@ -136,7 +95,7 @@ export default async (req, res) => {
       throw new Error('no keys left')
     }
 
-    return res.status(200).json({id: booked.data.id, provider: booked.data.providerRef.id})
+    return res.status(200).json({id: booked.id, provider: booked.provider_id})
   } catch (e) {
     return res.status(400).send(e.message)
   }
