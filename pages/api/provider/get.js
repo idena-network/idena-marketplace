@@ -23,7 +23,7 @@ export default async (req, res) => {
     const counterRow = counter.rows[0]
     return res.json({
       id,
-      data: row,
+      data: {...row, prices: [1, 3, 5]},
       slots: counterRow.count,
     })
   } catch (e) {
