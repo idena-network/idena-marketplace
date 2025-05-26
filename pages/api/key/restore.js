@@ -1,8 +1,7 @@
 /* eslint-disable no-loop-func */
-import {query as q} from 'faunadb'
 import {hexToUint8Array} from '../../../shared/utils/buffers'
-import {serverClient} from '../../../shared/utils/faunadb'
 import {getEpoch} from '../../../shared/utils/node-api'
+import {createPool} from '../../../shared/utils/pg'
 import {getAddrFromSignature} from '../../../shared/utils/signature'
 
 export default async (req, res) => {
@@ -20,31 +19,37 @@ export default async (req, res) => {
     return res.status(400).send('bad signature')
   }
 
+  const pool = createPool()
+
   try {
     const {epoch} = await getEpoch()
 
-    const {data} = await serverClient.query(
-      q.Map(
-        q.Paginate(q.Match(q.Index('search_apikey_by_coinbase_epoch'), coinbase, epoch)),
-        q.Lambda(['ref'], q.Get(q.Var('ref')))
-      )
+    const keysQuery = await pool.query(
+      `
+select * from keys 
+where coinbase = $1 and epoch = $2 
+order by updated_at desc 
+limit 1`,
+      [coinbase, epoch]
     )
 
-    if (!data.length) return res.status(400).send('key not found')
+    if (!keysQuery.rowCount) {
+      return res.status(400).send('key not found')
+    }
 
-    data.sort((a, b) => a.ts - b.ts)
+    const providerQuery = await pool.query('select * from providers where id = $1', [keysQuery.rows[0].provider_id])
 
-    const lastKey = data[data.length - 1]
-
-    const provider = await serverClient.query(q.Get(lastKey.data.providerRef))
+    const key = keysQuery.rows[0]
+    const provider = providerQuery.rows[0]
 
     return res.status(200).json({
-      key: lastKey.data.key,
-      url: provider.data.url,
-      epoch: lastKey.data.epoch,
-      provider: lastKey.data.providerRef.id,
+      key: key.id,
+      url: provider.url,
+      epoch: key.epoch,
+      provider: provider.id,
     })
   } catch (e) {
-    return res.status(400).send(e.message)
+    console.log(e)
+    return res.status(400).send('failed to get a provider')
   }
 }

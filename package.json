@@ -10,12 +10,12 @@
   "dependencies": {
     "axios": "^0.21.1",
     "ethereumjs-util": "^7.0.10",
-    "faunadb": "^4.0.3",
     "google-protobuf": "^3.15.6",
     "http-proxy-middleware": "^1.0.6",
     "js-sha3": "^0.8.0",
-    "next": "10.0.5",
-    "react": "17.0.1",
+    "next": "^12.3.7",
+    "pg": "^8.16.0",
+    "react": "^17.0.2",
     "react-dom": "17.0.1",
     "secp256k1": "^4.0.2",
     "uuid": "^8.3.2"

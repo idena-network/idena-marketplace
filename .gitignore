@@ -35,3 +35,5 @@ yarn-error.log*
 .faunarc
 
 .vscode
+
+*.env

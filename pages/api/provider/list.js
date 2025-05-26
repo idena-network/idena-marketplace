@@ -1,33 +1,41 @@
-import {query as q} from 'faunadb'
-import {serverClient} from '../../../shared/utils/faunadb'
 import {getEpoch} from '../../../shared/utils/node-api'
+import {createPool} from '../../../shared/utils/pg'
 
 export default async (req, res) => {
   const {epoch} = await getEpoch()
+
+  const pool = createPool()
+
   try {
-    const query = await serverClient.query(
-      q.Map(
-        q.Paginate(q.Documents(q.Collection('providers'))),
-        q.Lambda(
-          'p',
-          q.Let(
-            {counter: q.Match(q.Index('counters_by_epoch_and_provider'), epoch, q.Var('p'))},
-            {
-              id: q.Select(['id'], q.Var('p')),
-              data: q.Select(['data'], q.Get(q.Var('p'))),
-              slots: q.If(q.Exists(q.Var('counter')), q.Select(['data', 'countPaid'], q.Get(q.Var('counter'))), 0),
-              inviteSlots: q.If(
-                q.Exists(q.Var('counter')),
-                q.Select(['data', 'countFree'], q.Get(q.Var('counter'))),
-                0
-              ),
-            }
-          )
-        )
-      )
+    const result = await pool.query(
+      `
+with cte as (
+	select provider_id, sum(case when free = false then 1 else 0 end) as paid, sum(case when free = true then 1 else 0 end) as free
+	from keys
+	where epoch = $1
+	group by provider_id
+)
+select p.*, cte.paid, cte.free
+from providers p inner join cte on cte.provider_id = p.id`,
+      [epoch]
     )
-    return res.json(query.data)
+
+    return res.json(
+      result.rows.map(item => ({
+        id: item.id,
+        data: {
+          url: item.url,
+          ownerName: item.ownerName,
+          price: item.price,
+          location: item.location,
+          address: item.address,
+        },
+        slots: item.paid,
+        inviteSlots: item.free,
+      }))
+    )
   } catch (e) {
-    return res.status(400).send('request failed')
+    console.log(e)
+    return res.status(400).send('failed to get a provider')
   }
 }

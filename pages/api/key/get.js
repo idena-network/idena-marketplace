@@ -1,6 +1,5 @@
-import {query as q} from 'faunadb'
-import {serverClient} from '../../../shared/utils/faunadb'
 import {getTx} from '../../../shared/utils/node-api'
+import {createPool} from '../../../shared/utils/pg'
 
 const HASH_IN_MEMPOOL = '0x0000000000000000000000000000000000000000000000000000000000000000'
 
@@ -9,46 +8,30 @@ export default async (req, res) => {
   if (!id) {
     return res.status(400).send('bad request')
   }
+  const pool = createPool()
   try {
-    const {result: keyObj} = await serverClient.query(
-      q.Let(
-        {
-          ref: q.Match(q.Index('search_apikey_by_id'), id),
-        },
-        q.If(
-          q.Exists(q.Var('ref')),
-          {
-            result: q.Get(q.Var('ref')),
-          },
-          {
-            result: null,
-          }
-        )
-      )
-    )
+    const result = await pool.query('select * from keys where id = $1', [id])
 
-    if (!keyObj) {
+    if (!result.rowCount) {
       return res.status(400).send('key not found')
     }
 
-    if (!keyObj.data.mined) {
-      const tx = await getTx(keyObj.data.hash)
+    const key = result.rows[0]
+
+    let {mined} = key
+
+    if (!mined) {
+      const tx = await getTx(key.hash)
 
       if (tx && tx.blockHash !== HASH_IN_MEMPOOL) {
         // set mined
-        await serverClient.query(
-          q.Update(keyObj.ref, {
-            data: {
-              mined: true,
-            },
-          })
-        )
-        keyObj.data.mined = true
+        await pool.query('update keys set mined = true where id = $1', [id])
+        mined = true
       }
     }
 
-    if (keyObj.data.mined) {
-      return res.status(200).json({key: keyObj.data.key, epoch: keyObj.data.epoch})
+    if (mined) {
+      return res.status(200).json({key: key.key, epoch: key.epoch})
     }
 
     return res.status(400).send('tx is not mined')
