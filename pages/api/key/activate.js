@@ -73,7 +73,7 @@ set coinbase = $3,
 where provider_id = $1 and epoch = $2 and coinbase is null and free = true
 returning id, key, provider_id
 `,
-        [availableProviders[i], epoch, coinbase, inviter?.address]
+        [availableProviders[i], epoch, coinbase, inviter]
       )
 
       if (bookQuery.rowCount) {
