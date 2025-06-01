@@ -69,13 +69,22 @@ having sum(case when free then 1 else 0 end) > 0`,
     for (let i = 0; i < availableProviders.length && !booked; i += 1) {
       const bookQuery = await pool.query(
         `
+with cte as (
+    select id
+    from keys
+    where provider_id = $1 
+      and epoch = $2 
+      and coinbase is null 
+      and free = true
+    limit 1
+)
 update keys
 set coinbase = $3,
     inviter = $4,
     mined = true,
     updated_at = now()
-where provider_id = $1 and epoch = $2 and coinbase is null and free = true
-returning id, key, provider_id
+where id in (select id from cte)
+returning id, key, provider_id;
 `,
         [availableProviders[i], epoch, coinbase, inviter?.address]
       )

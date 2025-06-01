@@ -46,11 +46,20 @@ export default async (req, res) => {
 
     const bookQuery = await pool.query(
       `
+with cte as (
+    select id
+    from keys
+    where provider_id = $2 
+      and epoch = $3 
+      and coinbase is null 
+      and free = false
+    limit 1
+)
 update keys
 set coinbase = $1,
     updated_at = now()
-where provider_id = $2 and epoch = $3 and coinbase is null and free = false
-returning id, key
+where id in (select id from cte)
+returning id, key;
 `,
       [coinbase, provider, epoch]
     )
